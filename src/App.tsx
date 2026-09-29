@@ -124,6 +124,16 @@ export default function App() {
         setRegistos(regList);
       }
     } catch (err) {
+      if (err instanceof Error && err.message === 'UNAUTHORIZED') {
+        setAuthToken(null);
+        sessionStorage.removeItem(SESSION_USER_KEY);
+        setCurrentUser(null);
+        showFlash(
+          'A sua sessão expirou. Por favor inicie sessão novamente.',
+          'warning'
+        );
+        return;
+      }
       console.error('Erro ao carregar dados SQLite:', err);
     }
   }, [currentUser]);

@@ -2,11 +2,15 @@ import express, { Request, Response, NextFunction } from 'express';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { fileURLToPath } from 'url';
 import initSqlJs, { Database, SqlJsStatic } from 'sql.js';
 import { createServer as createViteServer } from 'vite';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const PORT = 3000;
-const DB_PATH = path.resolve(process.cwd(), 'base_dados_nr.db');
+const DB_PATH = path.resolve(__dirname, 'base_dados_nr.db');
 const SECRET_KEY =
   process.env.SECRET_KEY || 'd3pcd_nr_secret_key_prod_2026_dglab_secure_token';
 
@@ -189,17 +193,49 @@ function normalizarDataIsoServer(dataStr?: string | null): string {
 
 let SQLModule: SqlJsStatic;
 let db: Database;
+let lastDiskMtimeMs = 0;
 
+/**
+ * Se o ficheiro base_dados_nr.db foi substituído/atualizado diretamente no disco
+ * (ex: cp base_dados_nr.db ou sqlite3 CLI), recarrega em memória antes de operar.
+ */
+function syncFromDiskIfChanged() {
+  try {
+    if (fs.existsSync(DB_PATH)) {
+      const stat = fs.statSync(DB_PATH);
+      if (lastDiskMtimeMs > 0 && stat.mtimeMs > lastDiskMtimeMs + 50) {
+        const fileBuffer = fs.readFileSync(DB_PATH);
+        const newDb = new SQLModule.Database(fileBuffer);
+        db.close();
+        db = newDb;
+        lastDiskMtimeMs = stat.mtimeMs;
+        console.log(
+          `[SQLite] Ficheiro ${DB_PATH} atualizado externamente. Recarregado em memória.`
+        );
+      }
+    }
+  } catch (err) {
+    console.error('[SQLite] Erro ao verificar alterações no disco:', err);
+  }
+}
+
+/**
+ * Grava a base de dados SQLite em memória para o ficheiro físico base_dados_nr.db
+ * e recria a instância a partir do buffer para garantir consistência total do sql.js.
+ */
 function saveDatabaseToDisk() {
   const data = db.export();
   const buffer = Buffer.from(data);
   fs.writeFileSync(DB_PATH, buffer);
+  const stat = fs.statSync(DB_PATH);
+  lastDiskMtimeMs = stat.mtimeMs;
 }
 
 function queryAll<T = Record<string, any>>(
   sql: string,
   params: any[] = []
 ): T[] {
+  syncFromDiskIfChanged();
   const stmt = db.prepare(sql);
   stmt.bind(params);
   const rows: T[] = [];
@@ -224,6 +260,7 @@ async function initDatabase() {
   if (fs.existsSync(DB_PATH)) {
     const fileBuffer = fs.readFileSync(DB_PATH);
     db = new SQLModule.Database(fileBuffer);
+    lastDiskMtimeMs = fs.statSync(DB_PATH).mtimeMs;
   } else {
     db = new SQLModule.Database();
   }
@@ -252,27 +289,6 @@ async function initDatabase() {
     );
   `);
 
-  // Limpar dados fictícios de demonstração anteriores caso existam
-  const demoDocs = [
-    'PT-TT-CC-1-12-34',
-    'PT-TT-MF-2049',
-    'PT-TT-AOS-123',
-    'PT-TT-RGM-D-18',
-    'PT-TT-DDPCD-0045',
-    'PT-TT-EPN-FOT-089',
-  ];
-  for (const docId of demoDocs) {
-    db.run(
-      'DELETE FROM registos_producao WHERE identificador_documento = ?',
-      [docId]
-    );
-  }
-
-  const demoUsers = ['m.silva', 'j.santos', 'a.pereira'];
-  for (const uName of demoUsers) {
-    db.run('DELETE FROM utilizadores WHERE username = ?', [uName]);
-  }
-
   // Garantir que existe pelo menos 1 utilizador administrador se a tabela estiver vazia
   const userCountRow = queryOne<{ total: number }>(
     'SELECT COUNT(*) as total FROM utilizadores'
@@ -286,6 +302,7 @@ async function initDatabase() {
   }
 
   saveDatabaseToDisk();
+  console.log(`[SQLite] Base de dados ativa em: ${DB_PATH}`);
 }
 
 async function startServer() {
@@ -297,6 +314,33 @@ async function startServer() {
   // ============================================================================
   // API ROUTES (Produção - SQLite base_dados_nr.db)
   // ============================================================================
+
+  // Estado físico da Base de Dados SQLite (Apenas Admin)
+  app.get('/api/db_status', requireAdmin, (_req, res) => {
+    syncFromDiskIfChanged();
+    try {
+      const stat = fs.statSync(DB_PATH);
+      const totalUsers =
+        queryOne<{ c: number }>('SELECT COUNT(*) as c FROM utilizadores')?.c ??
+        0;
+      const totalRegistos =
+        queryOne<{ c: number }>('SELECT COUNT(*) as c FROM registos_producao')
+          ?.c ?? 0;
+      res.json({
+        ok: true,
+        dbPath: DB_PATH,
+        sizeBytes: stat.size,
+        lastModified: stat.mtime.toISOString(),
+        totalUsers,
+        totalRegistos,
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
 
   // Login (/login)
   app.post('/api/login', (req, res) => {
@@ -373,6 +417,7 @@ async function startServer() {
 
   // Criar Utilizador (Apenas Admin)
   app.post('/api/utilizadores', requireAdmin, (req, res) => {
+    syncFromDiskIfChanged();
     const username = String(req.body.username || '').trim();
     const nome_operador = String(req.body.nome_operador || '').trim();
     const password = String(req.body.password || '').trim();
@@ -406,16 +451,27 @@ async function startServer() {
         'INSERT INTO utilizadores (username, password_hash, nome_operador, perfil) VALUES (?, ?, ?, ?)',
         [username, passHash, nome_operador, perfil]
       );
+    } catch {
+      res.status(400).json({
+        ok: false,
+        message: 'Erro: O nome de utilizador já existe.',
+        category: 'danger',
+      });
+      return;
+    }
+
+    try {
       saveDatabaseToDisk();
       res.json({
         ok: true,
         message: 'Utilizador criado com sucesso!',
         category: 'success',
       });
-    } catch {
-      res.status(400).json({
+    } catch (err) {
+      console.error('[SQLite] Erro ao gravar base_dados_nr.db no disco:', err);
+      res.status(500).json({
         ok: false,
-        message: 'Erro: O nome de utilizador já existe.',
+        message: `Erro de permissões ao gravar em ${DB_PATH}. Verifique chown www-data:www-data.`,
         category: 'danger',
       });
     }
@@ -423,6 +479,7 @@ async function startServer() {
 
   // Editar Utilizador (Apenas Admin)
   app.put('/api/utilizadores/:id', requireAdmin, (req, res) => {
+    syncFromDiskIfChanged();
     const id = Number(req.params.id);
     const username = String(req.body.username || '').trim();
     const nome_operador = String(req.body.nome_operador || '').trim();
@@ -454,16 +511,27 @@ async function startServer() {
         [username, nome_operador, perfil, id]
       );
     }
-    saveDatabaseToDisk();
-    res.json({
-      ok: true,
-      message: 'Utilizador atualizado com sucesso!',
-      category: 'success',
-    });
+
+    try {
+      saveDatabaseToDisk();
+      res.json({
+        ok: true,
+        message: 'Utilizador atualizado com sucesso!',
+        category: 'success',
+      });
+    } catch (err) {
+      console.error('[SQLite] Erro ao gravar base_dados_nr.db no disco:', err);
+      res.status(500).json({
+        ok: false,
+        message: `Erro ao gravar alterações no ficheiro ${DB_PATH}.`,
+        category: 'danger',
+      });
+    }
   });
 
   // Eliminar Utilizador (Apenas Admin)
   app.delete('/api/utilizadores/:id', requireAdmin, (req, res) => {
+    syncFromDiskIfChanged();
     const id = Number(req.params.id);
     db.run('DELETE FROM utilizadores WHERE id = ?', [id]);
     saveDatabaseToDisk();
@@ -476,6 +544,7 @@ async function startServer() {
 
   // Alterar Minha Password (Utilizador Autenticado)
   app.post('/api/alterar_minha_password', requireAuth, (req, res) => {
+    syncFromDiskIfChanged();
     const sessionUser: SessionPayload = (req as any).sessionUser;
     const novaPass = String(req.body.nova_password || '').trim();
 
@@ -523,7 +592,7 @@ async function startServer() {
       );
     } else {
       rows = queryAll(
-        'SELECT * FROM registos_producao WHERE nome_operador = ? ORDER BY data_hora_captura DESC, id DESC',
+        'SELECT * FROM registos_producao WHERE LOWER(nome_operador) = LOWER(?) ORDER BY data_hora_captura DESC, id DESC',
         [sessionUser.nome_operador]
       );
     }
@@ -546,6 +615,7 @@ async function startServer() {
 
   // Inserir Registo (/registo)
   app.post('/api/registos', requireAuth, (req, res) => {
+    syncFromDiskIfChanged();
     const sessionUser: SessionPayload = (req as any).sessionUser;
 
     const data_cap =
@@ -592,23 +662,35 @@ async function startServer() {
         'INSERT INTO registos_producao (data_hora_captura, nome_operador, pedido, identificador_documento, tipo_pedido, tipo_trabalho, tipo_fonte, total_imagens) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [data_cap, nome_operador, pedido, doc, tipo_p, tipo_t, tipo_f, total_img]
       );
-      saveDatabaseToDisk();
-      res.json({
-        ok: true,
-        message: 'Registo inserido com sucesso!',
-        category: 'success',
-      });
     } catch {
       res.status(409).json({
         ok: false,
         message: 'O documento já se encontra registado!',
         category: 'warning',
       });
+      return;
+    }
+
+    try {
+      saveDatabaseToDisk();
+      res.json({
+        ok: true,
+        message: 'Registo inserido com sucesso!',
+        category: 'success',
+      });
+    } catch (err) {
+      console.error('[SQLite] Erro ao gravar base_dados_nr.db no disco:', err);
+      res.status(500).json({
+        ok: false,
+        message: `Erro de escrita no ficheiro ${DB_PATH}. Verifique as permissões no servidor.`,
+        category: 'danger',
+      });
     }
   });
 
   // Importar lote Excel (/importar_excel)
   app.post('/api/registos/lote', requireAuth, (req, res) => {
+    syncFromDiskIfChanged();
     const sessionUser: SessionPayload = (req as any).sessionUser;
     const linhas = Array.isArray(req.body.linhas) ? req.body.linhas : [];
     let importados = 0;
@@ -666,6 +748,7 @@ async function startServer() {
 
   // Editar Registo (Apenas Admin)
   app.put('/api/registos/:id', requireAdmin, (req, res) => {
+    syncFromDiskIfChanged();
     const id = Number(req.params.id);
     const data_cap =
       normalizarDataIsoServer(req.body.data_hora_captura) ||
@@ -707,6 +790,7 @@ async function startServer() {
 
   // Eliminar Registo (Apenas Admin)
   app.delete('/api/registos/:id', requireAdmin, (req, res) => {
+    syncFromDiskIfChanged();
     const id = Number(req.params.id);
     db.run('DELETE FROM registos_producao WHERE id=?', [id]);
     saveDatabaseToDisk();
@@ -719,6 +803,7 @@ async function startServer() {
 
   // Descarregar ficheiro SQLite base_dados_nr.db (Apenas Admin)
   app.get('/api/download_db', requireAdmin, (_req, res) => {
+    syncFromDiskIfChanged();
     saveDatabaseToDisk();
     res.download(DB_PATH, 'base_dados_nr.db');
   });
@@ -794,7 +879,7 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.join(__dirname, 'dist');
     app.use(express.static(distPath));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));

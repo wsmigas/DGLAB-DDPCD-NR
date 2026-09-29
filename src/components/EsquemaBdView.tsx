@@ -1,8 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Utilizador, RegistoProducao } from '../utils/nrHelpers';
-import { getAuthToken } from '../services/dbService';
+import {
+  getAuthToken,
+  fetchDbStatusSQLite,
+  DbStatusInfo,
+} from '../services/dbService';
 import { descarregarManualInstalacaoPDF } from '../utils/pdfManualService';
-import { Database, Table, Download, Upload, Code2, FileText } from 'lucide-react';
+import { Database, Table, Download, Upload, Code2, FileText, HardDrive } from 'lucide-react';
 
 interface EsquemaBdViewProps {
   utilizadores: Utilizador[];
@@ -19,7 +23,14 @@ export const EsquemaBdView: React.FC<EsquemaBdViewProps> = ({
 }) => {
   const [selectedDbFile, setSelectedDbFile] = useState<File | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [dbStatus, setDbStatus] = useState<DbStatusInfo | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    fetchDbStatusSQLite().then((info) => {
+      if (info) setDbStatus(info);
+    });
+  }, [utilizadores.length, registos.length]);
 
   const handleRestoreSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,6 +106,32 @@ CREATE TABLE IF NOT EXISTS registos_producao (
           </a>
         </div>
       </div>
+
+      {/* Estado Físico do Ficheiro no Servidor */}
+      {dbStatus && dbStatus.ok && (
+        <div
+          className={`rounded-lg border px-4 py-3 mb-4 flex flex-wrap items-center justify-between gap-3 text-xs ${
+            isDark
+              ? 'bg-emerald-950/25 border-emerald-800/50 text-emerald-300'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <HardDrive className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span>
+              Ficheiro físico ativo:{' '}
+              <strong className="font-mono">{dbStatus.dbPath}</strong> (
+              {((dbStatus.sizeBytes || 0) / 1024).toFixed(1)} KB)
+            </span>
+          </div>
+          <div className="font-mono text-[11px] opacity-85">
+            Última gravação em disco:{' '}
+            {dbStatus.lastModified
+              ? new Date(dbStatus.lastModified).toLocaleString('pt-PT')
+              : '-'}
+          </div>
+        </div>
+      )}
 
       {/* Secção de Restauro / Importação de base_dados_nr.db */}
       <div

@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+base_dados_nr.db
+base_dados_nr.db-journal
+base_dados_nr.db-wal

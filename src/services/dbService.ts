@@ -27,6 +27,23 @@ function authHeaders(includeJson = true): HeadersInit {
   return headers;
 }
 
+export interface DbStatusInfo {
+  ok: boolean;
+  dbPath?: string;
+  sizeBytes?: number;
+  lastModified?: string;
+  totalUsers?: number;
+  totalRegistos?: number;
+}
+
+export async function fetchDbStatusSQLite(): Promise<DbStatusInfo | null> {
+  const res = await fetch('/api/db_status', {
+    headers: authHeaders(false),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export async function loginSQLite(
   username: string,
   password: string
@@ -48,6 +65,9 @@ export async function fetchUtilizadoresSQLite(): Promise<Utilizador[]> {
   const res = await fetch('/api/utilizadores', {
     headers: authHeaders(false),
   });
+  if (res.status === 401) {
+    throw new Error('UNAUTHORIZED');
+  }
   if (!res.ok) return [];
   return res.json();
 }
@@ -56,6 +76,9 @@ export async function fetchRegistosSQLite(): Promise<RegistoProducao[]> {
   const res = await fetch('/api/registos', {
     headers: authHeaders(false),
   });
+  if (res.status === 401) {
+    throw new Error('UNAUTHORIZED');
+  }
   if (!res.ok) return [];
   return res.json();
 }
