@@ -1,0 +1,6 @@
+{
+  "name": "Intranet DDPCD - DGLAB",
+  "description": "Portal de Registo de Produção de Captura e Gestão de Relatórios do Núcleo de Reprodução (DGLAB - Direção-Geral do Livro, dos Arquivos e das Bibliotecas).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
