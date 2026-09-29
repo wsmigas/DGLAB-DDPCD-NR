@@ -624,24 +624,36 @@ export function descarregarManualInstalacaoPDF(): void {
   ];
 
   // Cabeçalho da Tabela de Ficheiros
-  const col1Width = 68;
+  const col1Width = 82;
   const col2Width = maxWidth - col1Width;
 
   doc.setFillColor(235, 238, 242);
   doc.setDrawColor(180, 185, 195);
   doc.setLineWidth(0.25);
   doc.rect(marginX, y - 3.5, maxWidth, 6.5, 'FD');
+  doc.line(marginX + col1Width, y - 3.5, marginX + col1Width, y + 3);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.2);
   doc.setTextColor(20, 30, 45);
   doc.text('Caminho do Ficheiro / Diretório', marginX + 2, y + 0.8);
-  doc.text('Função na Aplicação', marginX + col1Width + 2, y + 0.8);
+  doc.text('Função na Aplicação', marginX + col1Width + 2.5, y + 0.8);
   y += 3;
 
   for (let i = 0; i < fileInventory.length; i++) {
     const [filePath, fileDesc] = fileInventory[i];
-    const rowH = 5.8;
+
+    doc.setFont('courier', 'normal');
+    doc.setFontSize(7.1);
+    const col1Lines = doc.splitTextToSize(filePath, col1Width - 4);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.6);
+    const col2Lines = doc.splitTextToSize(fileDesc, col2Width - 4.5);
+
+    const maxLines = Math.max(col1Lines.length, col2Lines.length);
+    const rowH = Math.max(5.8, maxLines * 3.8 + 2.2);
+
     checkSpace(rowH + 2);
 
     if (i % 2 === 1) {
@@ -653,14 +665,14 @@ export function descarregarManualInstalacaoPDF(): void {
     doc.line(marginX + col1Width, y, marginX + col1Width, y + rowH);
 
     doc.setFont('courier', 'normal');
-    doc.setFontSize(7.3);
+    doc.setFontSize(7.1);
     doc.setTextColor(30, 41, 59);
-    doc.text(filePath, marginX + 1.8, y + 3.9);
+    doc.text(col1Lines, marginX + 2, y + 3.8);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7.8);
+    doc.setFontSize(7.6);
     doc.setTextColor(55, 65, 81);
-    doc.text(fileDesc, marginX + col1Width + 2, y + 3.9);
+    doc.text(col2Lines, marginX + col1Width + 2.5, y + 3.8);
 
     y += rowH;
   }
