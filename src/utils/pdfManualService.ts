@@ -580,11 +580,17 @@ export function descarregarManualInstalacaoPDF(): void {
     'WantedBy=multi-user.target',
   ]);
 
-  addSubHeading('3.3. Comandos de Ativação e Monitorização do Web Server');
+  addSubHeading('3.3. Comandos de Permissões, Ativação e Monitorização do Web Server');
   addCodeBlock([
+    '# Garantir que o utilizador www-data tem permissao de escrita na pasta e na BD:',
+    'sudo chown -R www-data:www-data /opt/app_nr',
+    'sudo chmod 775 /opt/app_nr',
+    'sudo chmod 664 /opt/app_nr/base_dados_nr.db',
+    '',
+    '# Ativar e iniciar o servico:',
     'sudo systemctl daemon-reload',
     'sudo systemctl enable intranet-nr',
-    'sudo systemctl start intranet-nr',
+    'sudo systemctl restart intranet-nr',
     'sudo systemctl status intranet-nr',
   ]);
 

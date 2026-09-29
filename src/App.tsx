@@ -180,6 +180,17 @@ export default function App() {
   const handleNavigate = (page: ActivePage) => {
     setFlash(null);
     if (
+      page === 'esquema_bd' &&
+      (currentUser?.perfil !== 'admin' ||
+        currentUser?.username.toLowerCase() !== 'admin')
+    ) {
+      showFlash(
+        'Acesso restrito exclusivamente ao utilizador "admin".',
+        'danger'
+      );
+      return;
+    }
+    if (
       currentUser?.perfil !== 'admin' &&
       (page === 'admin_relatorios' ||
         page === 'admin_utilizadores' ||
@@ -487,14 +498,16 @@ export default function App() {
               />
             )}
 
-          {activePage === 'esquema_bd' && currentUser.perfil === 'admin' && (
-            <EsquemaBdView
-              utilizadores={utilizadores}
-              registos={registos}
-              onRestoreDatabase={handleRestoreDatabase}
-              isDark={isDark}
-            />
-          )}
+          {activePage === 'esquema_bd' &&
+            currentUser.perfil === 'admin' &&
+            currentUser.username.toLowerCase() === 'admin' && (
+              <EsquemaBdView
+                utilizadores={utilizadores}
+                registos={registos}
+                onRestoreDatabase={handleRestoreDatabase}
+                isDark={isDark}
+              />
+            )}
         </main>
 
         {/* Footer DGLAB */}

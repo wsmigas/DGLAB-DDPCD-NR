@@ -170,21 +170,23 @@ export const Navbar: React.FC<NavbarProps> = ({
                   Utilizadores
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => onNavigate('esquema_bd')}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
-                    activePage === 'esquema_bd'
-                      ? 'bg-emerald-700 text-white border-emerald-700'
-                      : isDark
-                      ? 'border-emerald-600/50 text-emerald-400 hover:bg-emerald-500/15'
-                      : 'border-emerald-600 text-emerald-700 hover:bg-emerald-50'
-                  }`}
-                  title="Gestão e Backup da Base de Dados SQLite"
-                >
-                  <Database className="w-3.5 h-3.5" />
-                  Base de Dados
-                </button>
+                {currentUser.username.toLowerCase() === 'admin' && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate('esquema_bd')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
+                      activePage === 'esquema_bd'
+                        ? 'bg-emerald-700 text-white border-emerald-700'
+                        : isDark
+                        ? 'border-emerald-600/50 text-emerald-400 hover:bg-emerald-500/15'
+                        : 'border-emerald-600 text-emerald-700 hover:bg-emerald-50'
+                    }`}
+                    title="Gestão e Backup da Base de Dados SQLite (Exclusivo login admin)"
+                  >
+                    <Database className="w-3.5 h-3.5" />
+                    Base de Dados
+                  </button>
+                )}
               </>
             )}
 

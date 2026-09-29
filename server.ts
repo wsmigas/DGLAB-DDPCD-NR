@@ -173,6 +173,23 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+function requireRootAdmin(req: Request, res: Response, next: NextFunction) {
+  const session = verifySessionToken(extractToken(req));
+  if (
+    !session ||
+    session.perfil !== 'admin' ||
+    session.username.toLowerCase() !== 'admin'
+  ) {
+    res.status(403).json({
+      ok: false,
+      message: 'Acesso restrito exclusivamente ao utilizador "admin".',
+    });
+    return;
+  }
+  (req as any).sessionUser = session;
+  next();
+}
+
 function normalizarDataIsoServer(dataStr?: string | null): string {
   if (!dataStr) return '';
   const d = String(dataStr).replace(' 00:00:00', '').trim().split(' ')[0];
@@ -315,8 +332,8 @@ async function startServer() {
   // API ROUTES (Produção - SQLite base_dados_nr.db)
   // ============================================================================
 
-  // Estado físico da Base de Dados SQLite (Apenas Admin)
-  app.get('/api/db_status', requireAdmin, (_req, res) => {
+  // Estado físico da Base de Dados SQLite (Exclusivo login 'admin')
+  app.get('/api/db_status', requireRootAdmin, (_req, res) => {
     syncFromDiskIfChanged();
     try {
       const stat = fs.statSync(DB_PATH);
@@ -801,15 +818,15 @@ async function startServer() {
     });
   });
 
-  // Descarregar ficheiro SQLite base_dados_nr.db (Apenas Admin)
-  app.get('/api/download_db', requireAdmin, (_req, res) => {
+  // Descarregar ficheiro SQLite base_dados_nr.db (Exclusivo login 'admin')
+  app.get('/api/download_db', requireRootAdmin, (_req, res) => {
     syncFromDiskIfChanged();
     saveDatabaseToDisk();
     res.download(DB_PATH, 'base_dados_nr.db');
   });
 
-  // Importar / Restaurar ficheiro SQLite base_dados_nr.db (Apenas Admin)
-  app.post('/api/upload_db', requireAdmin, (req, res) => {
+  // Importar / Restaurar ficheiro SQLite base_dados_nr.db (Exclusivo login 'admin')
+  app.post('/api/upload_db', requireRootAdmin, (req, res) => {
     const base64Data = String(req.body.fileBase64 || '').trim();
     if (!base64Data) {
       res.status(400).json({
